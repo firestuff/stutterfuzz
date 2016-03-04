@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "list.h"
@@ -19,8 +20,10 @@
 static struct {
 	char *blob_dir;
 	uint32_t num_conns;
+	uint32_t cycle_ms;
 } config = {
 	.num_conns = 100,
+	.cycle_ms = 50,
 };
 
 struct file {
@@ -45,6 +48,7 @@ static uint64_t rounds = 0, open_conns = 0;
 static bool parse_opts(int argc, char *argv[]) {
 	static struct option long_options[] = {
 		{"blob-dir",  required_argument, 0, 'b'},
+		{"cycle-ms",  required_argument, 0, 'c'},
 		{"num-conns", required_argument, 0, 'n'},
 		{0,           0,                 0, 0  },
 	};
@@ -56,9 +60,14 @@ static bool parse_opts(int argc, char *argv[]) {
 				config.blob_dir = optarg;
 				break;
 
+			case 'c':
+				config.cycle_ms = (uint32_t) strtoul(optarg, NULL, 10);
+				break;
+
 			case 'n':
 				config.num_conns = (uint32_t) strtoul(optarg, NULL, 10);
 				assert(config.num_conns);
+				break;
 
 			default:
 				return false;
@@ -76,7 +85,7 @@ static bool parse_opts(int argc, char *argv[]) {
 	return true;
 }
 
-static void open_blobs() {
+static void file_open() {
 	size_t dirlen = strlen(config.blob_dir);
 
 	DIR *dir = opendir(config.blob_dir);
@@ -143,7 +152,9 @@ static struct file *file_next() {
 	if (iter->next == &file_head) {
 		iter = iter->next->next;
 		rounds++;
-		fprintf(stderr, "\rRounds: %ju", (uintmax_t) rounds);
+		if (!(++rounds % 100)) {
+			fprintf(stderr, "\rRounds: %ju", (uintmax_t) rounds);
+		}
 	} else {
 		iter = iter->next;
 	}
@@ -210,11 +221,20 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
-	open_blobs();
+	file_open();
+
+#define NS_PER_S 1000000000
+#define NS_PER_MS 1000000
+	uint64_t cycle_ns = config.cycle_ms * NS_PER_MS;
+	struct timespec ts = {
+		.tv_sec = cycle_ns / NS_PER_S,
+		.tv_nsec = (config.cycle_ms * NS_PER_MS) % NS_PER_S,
+	};
 
 	while (true) {
 		conn_fill();
 		conn_send_messages();
+		assert(!nanosleep(&ts, NULL));
 	}
 
 	// rand_cleanup();
