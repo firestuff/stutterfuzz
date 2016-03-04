@@ -3,32 +3,20 @@
 
 #include "rand.h"
 
-static uint64_t sqrt64(uint64_t n) {
-	uint64_t g = UINT64_C(1) << 31;
-  
-	for (uint64_t c = g; c; g |= c) {
-		if (g * g > n) {
-			g ^= c;  
-		}
-		c >>= 1;
-	}  
-	return g;
-}  
-
-static uint64_t get_split(uint64_t len) {
+static uint64_t get_split(uint64_t total_len, uint64_t remaining_len) {
 	uint64_t rnd;
 	rand_fill(&rnd, sizeof(rnd));
-	rnd %= (len * len);
-	return sqrt64(rnd) + 1;
+	rnd %= total_len;
+	return rnd > remaining_len ? remaining_len : rnd;
 }
 
 int main(int __attribute__ ((unused)) argc, char __attribute__ ((unused)) *argv[]) {
 	rand_init();
 
-	for (uint64_t len = 1397; len;) {
-		uint64_t consume = get_split(len);
+	uint64_t total_len = 1397;
+	for (uint64_t remaining = total_len, consume = 0; remaining; remaining -= consume) {
+		consume = get_split(total_len, remaining);
 		fprintf(stderr, "consume %ju bytes\n", (uintmax_t) consume);
-		len -= consume;
 	}
 
 	rand_cleanup();
