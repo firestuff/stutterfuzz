@@ -277,8 +277,8 @@ static void conn_check(struct conn *conn) {
 	if (error == EINPROGRESS) {
 		return;
 	}
-	fprintf(stderr, "\nConnection failed: %s\n", strerror(error));
-	exit(EXIT_FAILURE);
+	fprintf(stderr, "Connection failed: %s\n", strerror(error));
+	shutdown_flag = true;
 }
 
 static void conn_cycle() {
