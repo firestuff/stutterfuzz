@@ -44,6 +44,7 @@ struct file {
 struct conn {
 	int fd;
 	struct file *file;
+	uint64_t start_cycle;
 	size_t offset;
 	struct list_head conn_list;
 };
@@ -54,8 +55,11 @@ static struct list_head conn_pending_head = LIST_HEAD_INIT(conn_pending_head);
 
 static int epoll_fd = -1;
 static struct addrinfo *addrs = NULL;
-static uint64_t rounds = 0, open_conns = 0;
+static uint64_t rounds = 0, open_conns = 0, cycle = 0;
 static bool shutdown_flag = false;
+static double mean_cycles_to_connect = 1.0;
+
+#define CYCLE_SMOOTHING 0.9999
 
 static void do_shutdown(int __attribute__((unused)) signal) {
 	shutdown_flag = true;
@@ -111,6 +115,10 @@ static bool parse_opts(int argc, char *argv[]) {
 	}
 
 	return true;
+}
+
+static void stats_print() {
+	fprintf(stderr, "\rStats: rounds=%ju, mean_cycles_to_connect=%0.2f            \r", (uintmax_t) rounds, mean_cycles_to_connect);
 }
 
 static void file_open() {
@@ -194,7 +202,7 @@ static struct file *file_next() {
 	if (iter->next == &file_head) {
 		iter = iter->next->next;
 		if (!(++rounds % 100)) {
-			fprintf(stderr, "\rRounds: %ju\r", (uintmax_t) rounds);
+			stats_print();
 		}
 	} else {
 		iter = iter->next;
@@ -229,6 +237,7 @@ static void conn_new() {
 	char buf[1];
 	sendto(conn->fd, buf, 0, MSG_DONTWAIT | MSG_FASTOPEN, addrs[0].ai_addr, addrs[0].ai_addrlen);
 	conn->file = file_next();
+	conn->start_cycle = cycle;
 	conn->offset = 0;
 	list_add(&conn->conn_list, &conn_pending_head);
 	struct epoll_event ev = {
@@ -287,6 +296,11 @@ static void conn_check(struct conn *conn) {
 	list_del(&conn->conn_list);
 	list_add(&conn->conn_list, &conn_open_head);
 	assert(!epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn->fd, NULL));
+
+	uint64_t cycles_to_connect = cycle - conn->start_cycle;
+	mean_cycles_to_connect = (
+			(mean_cycles_to_connect * CYCLE_SMOOTHING) +
+			((double) cycles_to_connect * (1.0 - CYCLE_SMOOTHING)));
 }
 
 static void conn_check_all() {
@@ -344,6 +358,7 @@ int main(int argc, char *argv[]) {
 	};
 
 	while (!shutdown_flag) {
+		cycle++;
 		conn_cycle();
 		conn_fill();
 		nanosleep(&ts, NULL);
