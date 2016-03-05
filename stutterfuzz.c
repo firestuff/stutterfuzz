@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -40,18 +41,16 @@ struct file {
 
 struct conn {
 	int fd;
-	enum {
-		CONN_CONNECTING,
-		CONN_SENDING,
-	} state;
 	struct file *file;
 	size_t offset;
 	struct list_head conn_list;
 };
 
 static struct list_head file_head = LIST_HEAD_INIT(file_head);
-static struct list_head conn_head = LIST_HEAD_INIT(conn_head);
+static struct list_head conn_open_head = LIST_HEAD_INIT(conn_open_head);
+static struct list_head conn_pending_head = LIST_HEAD_INIT(conn_pending_head);
 
+static int epoll_fd = -1;
 static struct addrinfo *addrs = NULL;
 static uint64_t rounds = 0, open_conns = 0;
 static bool shutdown_flag = false;
@@ -227,10 +226,9 @@ static void conn_new() {
 	// TODO: consider sending data here
 	char buf[1];
 	sendto(conn->fd, buf, 0, MSG_DONTWAIT | MSG_FASTOPEN, addrs[0].ai_addr, addrs[0].ai_addrlen);
-	conn->state = CONN_CONNECTING;
 	conn->file = file_next();
 	conn->offset = 0;
-	list_add(&conn->conn_list, &conn_head);
+	list_add(&conn->conn_list, &conn_pending_head);
 	open_conns++;
 }
 
@@ -243,7 +241,10 @@ static void conn_del(struct conn *conn) {
 
 static void conn_cleanup() {
 	struct conn *iter, *next;
-	list_for_each_entry_safe(iter, next, &conn_head, conn_list) {
+	list_for_each_entry_safe(iter, next, &conn_pending_head, conn_list) {
+		conn_del(iter);
+	}
+	list_for_each_entry_safe(iter, next, &conn_open_head, conn_list) {
 		conn_del(iter);
 	}
 }
@@ -270,7 +271,8 @@ static void conn_check(struct conn *conn) {
   socklen_t len = sizeof(error);
 	assert(getsockopt(conn->fd, SOL_SOCKET, SO_ERROR, &error, &len) == 0);
 	if (!error) {
-		conn->state = CONN_SENDING;
+		list_del(&conn->conn_list);
+		list_add(&conn->conn_list, &conn_open_head);
 		return;
 	}
 	if (error == EINPROGRESS) {
@@ -282,16 +284,11 @@ static void conn_check(struct conn *conn) {
 
 static void conn_cycle() {
 	struct conn *iter, *next;
-	list_for_each_entry_safe(iter, next, &conn_head, conn_list) {
-		switch (iter->state) {
-			case CONN_CONNECTING:
-				conn_check(iter);
-				break;
-
-			case CONN_SENDING:
-				conn_send_message(iter);
-				break;
-		}
+	list_for_each_entry_safe(iter, next, &conn_open_head, conn_list) {
+		conn_send_message(iter);
+	}
+	list_for_each_entry_safe(iter, next, &conn_pending_head, conn_list) {
+		conn_check(iter);
 	}
 }
 
@@ -309,6 +306,9 @@ int main(int argc, char *argv[]) {
 	assert(!close(STDOUT_FILENO));
 
 	file_open();
+
+	epoll_fd = epoll_create1(0);
+	assert(epoll_fd >= 0);
 
 #define NS_PER_S 1000000000
 #define MS_PER_S 1000
@@ -330,5 +330,6 @@ int main(int argc, char *argv[]) {
 	rand_cleanup();
 	freeaddrinfo(addrs);
 
+	assert(!close(epoll_fd));
 	assert(!close(STDERR_FILENO));
 }
