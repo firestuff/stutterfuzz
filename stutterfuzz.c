@@ -32,7 +32,7 @@ static struct {
 	uint32_t cycle_ms;
 } config = {
 	.num_conns = 100,
-	.cycle_ms = 50,
+	.cycle_ms = 150,
 };
 
 struct file {
@@ -350,7 +350,7 @@ int main(int argc, char *argv[]) {
 			"\t--blob-dir=PATH [required]\n"
 			"\t--host=HOST [required]\n"
 			"\t--port=PORT [required]\n"
-			"\t--cycle-ms=CYCLE_MILLSECONDS [default 50]\n"
+			"\t--cycle-ms=CYCLE_MILLSECONDS [default 150]\n"
 			"\t--num-conns=PARALLEL_CONNECTIONS [default 100]\n"
 			, argv[0]);
 		exit(EXIT_FAILURE);
