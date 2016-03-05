@@ -192,7 +192,6 @@ static struct file *file_next() {
 
 	if (iter->next == &file_head) {
 		iter = iter->next->next;
-		rounds++;
 		if (!(++rounds % 100)) {
 			fprintf(stderr, "\rRounds: %ju\r", (uintmax_t) rounds);
 		}
