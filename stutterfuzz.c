@@ -2,6 +2,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <netdb.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -19,6 +20,8 @@
 
 static struct {
 	char *blob_dir;
+	char *node;
+	char *service;
 	uint32_t num_conns;
 	uint32_t cycle_ms;
 } config = {
@@ -35,6 +38,10 @@ struct file {
 
 struct conn {
 	int fd;
+	enum {
+		CONN_CONNECTING,
+		CONN_SENDING,
+	} state;
 	struct file *file;
 	size_t offset;
 	struct list_head conn_list;
@@ -48,6 +55,8 @@ static uint64_t rounds = 0, open_conns = 0;
 static bool parse_opts(int argc, char *argv[]) {
 	static struct option long_options[] = {
 		{"blob-dir",  required_argument, 0, 'b'},
+		{"host",      required_argument, 0, 'h'},
+		{"port",      required_argument, 0, 'p'},
 		{"cycle-ms",  required_argument, 0, 'c'},
 		{"num-conns", required_argument, 0, 'n'},
 		{0,           0,                 0, 0  },
@@ -58,6 +67,14 @@ static bool parse_opts(int argc, char *argv[]) {
 		switch (opt) {
 			case 'b':
 				config.blob_dir = optarg;
+				break;
+
+			case 'h':
+				config.node = optarg;
+				break;
+
+			case 'p':
+				config.service = optarg;
 				break;
 
 			case 'c':
@@ -78,7 +95,9 @@ static bool parse_opts(int argc, char *argv[]) {
 		return false;
 	}
 
-	if (!config.blob_dir) {
+	if (!config.blob_dir ||
+			!config.node ||
+			!config.service) {
 		return false;
 	}
 
@@ -171,11 +190,25 @@ static size_t conn_get_split(struct conn *conn) {
 }
 
 static void conn_new() {
+	static struct addrinfo *addrs = NULL;
+
+	if (!addrs) {
+		struct addrinfo hints = {
+			.ai_flags = AI_V4MAPPED | AI_ADDRCONFIG,
+			.ai_family = AF_UNSPEC,
+			.ai_socktype = SOCK_STREAM,
+		};
+		assert(!getaddrinfo(config.node, config.service, &hints, &addrs));
+	}
+
 	struct conn *conn = malloc(sizeof(*conn));
 	assert(conn);
 	conn->fd = socket(AF_INET6, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	assert(conn->fd >= 0);
-	// TODO: start connection
+	// TODO: consider sending data here
+	char buf[1];
+	sendto(conn->fd, buf, 0, MSG_DONTWAIT | MSG_FASTOPEN, addrs[0].ai_addr, addrs[0].ai_addrlen);
+	conn->state = CONN_CONNECTING;
 	conn->file = file_next();
 	conn->offset = 0;
 	list_add(&conn->conn_list, &conn_head);
