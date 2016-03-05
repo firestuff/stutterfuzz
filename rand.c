@@ -50,3 +50,12 @@ void rand_fill(void *value, size_t size) {
 	rand_buf.start = 0;
 	rand_buf.length = BUF_LEN_MAX;
 }
+
+bool rand_yes_no(uint64_t mean_yes_period) {
+	if (!mean_yes_period) {
+		return false;
+	}
+	uint64_t val;
+	rand_fill(&val, sizeof(val));
+	return !(val % mean_yes_period);
+}

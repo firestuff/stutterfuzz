@@ -30,9 +30,13 @@ static struct {
 	char *service;
 	uint32_t num_conns;
 	uint32_t cycle_ms;
+	uint32_t fastopen_chance;
+	uint32_t close_chance;
 } config = {
 	.num_conns = 100,
 	.cycle_ms = 150,
+	.fastopen_chance = 2,
+	.close_chance = 500,
 };
 
 struct file {
@@ -69,12 +73,14 @@ static void do_shutdown(int __attribute__((unused)) signal) {
 
 static bool parse_opts(int argc, char *argv[]) {
 	static struct option long_options[] = {
-		{"blob-dir",  required_argument, 0, 'b'},
-		{"host",      required_argument, 0, 'h'},
-		{"port",      required_argument, 0, 'p'},
-		{"cycle-ms",  required_argument, 0, 'c'},
-		{"num-conns", required_argument, 0, 'n'},
-		{0,           0,                 0, 0  },
+		{"blob-dir",        required_argument, 0, 'b'},
+		{"host",            required_argument, 0, 'h'},
+		{"port",            required_argument, 0, 'p'},
+		{"cycle-ms",        required_argument, 0, 'c'},
+		{"num-conns",       required_argument, 0, 'n'},
+		{"fastopen-chance", required_argument, 0, 'f'},
+		{"close-chance",    required_argument, 0, 'l'},
+		{0,                 0,                 0, 0  },
 	};
 
 	int opt;
@@ -99,6 +105,14 @@ static bool parse_opts(int argc, char *argv[]) {
 			case 'n':
 				config.num_conns = (uint32_t) strtoul(optarg, NULL, 10);
 				assert(config.num_conns);
+				break;
+
+			case 'f':
+				config.fastopen_chance = (uint32_t) strtoul(optarg, NULL, 10);
+				break;
+
+			case 'l':
+				config.close_chance = (uint32_t) strtoul(optarg, NULL, 10);
 				break;
 
 			default:
@@ -238,12 +252,12 @@ static void conn_new() {
 	assert(conn);
 	conn->fd = socket(AF_INET6, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	assert(conn->fd >= 0);
-	// TODO: consider sending data here
-	char buf[1];
-	sendto(conn->fd, buf, 0, MSG_DONTWAIT | MSG_FASTOPEN, addrs[0].ai_addr, addrs[0].ai_addrlen);
+
 	conn->file = file_next();
-	conn->start_cycle = cycle;
 	conn->offset = 0;
+	conn->offset = rand_yes_no(config.fastopen_chance) ? conn_get_split(conn) : 0;
+	sendto(conn->fd, conn->file->buf, conn->offset, MSG_DONTWAIT | MSG_FASTOPEN, addrs[0].ai_addr, addrs[0].ai_addrlen);
+	conn->start_cycle = cycle;
 	list_add(&conn->conn_list, &conn_pending_head);
 	struct epoll_event ev = {
 		.events = EPOLLOUT,
@@ -292,14 +306,27 @@ static void conn_send_message(struct conn *conn) {
 		conn_send_not_ready++;
 		return;
 	}
-	size_t remaining = conn->file->len - conn->offset;
+
+	if (conn->offset == conn->file->len) {
+		conn_del(conn);
+		return;
+	}
+
+	if (rand_yes_no(config.close_chance)) {
+		conn_del(conn);
+		return;
+	}
+
 	size_t to_send = conn_get_split(conn);
-	if (send(conn->fd, conn->file->buf + conn->offset, to_send, MSG_DONTWAIT | MSG_NOSIGNAL) != (ssize_t) to_send ||
-			to_send == remaining) {
+	if (send(conn->fd, conn->file->buf + conn->offset, to_send, MSG_DONTWAIT | MSG_NOSIGNAL) != (ssize_t) to_send) {
 		conn_del(conn);
 		return;
 	}
 	conn->offset += to_send;
+	if (conn->offset == conn->file->len) {
+		conn_del(conn);
+		return;
+	}
 }
 
 static void conn_check(struct conn *conn) {
@@ -352,6 +379,8 @@ int main(int argc, char *argv[]) {
 			"\t--port=PORT [required]\n"
 			"\t--cycle-ms=CYCLE_MILLSECONDS [default 150]\n"
 			"\t--num-conns=PARALLEL_CONNECTIONS [default 100]\n"
+			"\t--fastopen-chance=CHANCE [default 2]\n"
+			"\t--close-chance=CHANCE [default 500]\n"
 			, argv[0]);
 		exit(EXIT_FAILURE);
 	}
