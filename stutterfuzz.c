@@ -311,7 +311,16 @@ int main(int argc, char *argv[]) {
 	rand_init();
 
 	if (!parse_opts(argc, argv)) {
-		fprintf(stderr, "Usage: TODO\n");
+		fprintf(stderr,
+			"Usage: %s [OPTION]...\n"
+			"\n"
+			"Options:\n"
+			"\t--blob-dir=PATH [required]\n"
+			"\t--host=HOST [required]\n"
+			"\t--port=PORT [required]\n"
+			"\t--cycle-ms=CYCLE_MILLSECONDS [default 50]\n"
+			"\t--num-conns=PARALLEL_CONNECTIONS [default 100]\n"
+			, argv[0]);
 		exit(EXIT_FAILURE);
 	}
 
