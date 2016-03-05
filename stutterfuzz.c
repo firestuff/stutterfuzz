@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <netdb.h>
+#include <netinet/tcp.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -58,6 +59,7 @@ static struct addrinfo *addrs = NULL;
 static uint64_t rounds = 0, open_conns = 0, cycle = 0;
 static bool shutdown_flag = false;
 static double mean_cycles_to_connect = 1.0;
+static uint64_t conn_send_ready = 0, conn_send_not_ready = 0;
 
 #define CYCLE_SMOOTHING 0.9999
 
@@ -118,7 +120,10 @@ static bool parse_opts(int argc, char *argv[]) {
 }
 
 static void stats_print() {
-	fprintf(stderr, "\rStats: rounds=%ju, mean_cycles_to_connect=%0.2f            \r", (uintmax_t) rounds, mean_cycles_to_connect);
+	fprintf(stderr, "\rStats: rounds=%ju, mean_cycles_to_connect=%0.2f, ready_to_send=%0.2f            \r",
+			(uintmax_t) rounds,
+			mean_cycles_to_connect,
+			(double) conn_send_ready / (double) (conn_send_ready + conn_send_not_ready));
 }
 
 static void file_open() {
@@ -273,7 +278,20 @@ static void conn_fill() {
 	}
 }
 
+static bool conn_ready_to_send(struct conn *conn) {
+	struct tcp_info tcp_info;
+	socklen_t tcp_info_length = sizeof(tcp_info);
+	assert(!getsockopt(conn->fd, SOL_TCP, TCP_INFO, &tcp_info, &tcp_info_length));
+	return !tcp_info.tcpi_unacked;
+}
+
 static void conn_send_message(struct conn *conn) {
+	if (conn_ready_to_send(conn)) {
+		conn_send_ready++;
+	} else {
+		conn_send_not_ready++;
+		return;
+	}
 	size_t remaining = conn->file->len - conn->offset;
 	size_t to_send = conn_get_split(conn);
 	if (send(conn->fd, conn->file->buf + conn->offset, to_send, MSG_DONTWAIT | MSG_NOSIGNAL) != (ssize_t) to_send ||
