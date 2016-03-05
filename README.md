@@ -66,6 +66,10 @@ Bad statistics look like this:
 Stats: rounds=2400, mean_cycles_to_connect=68.08, ready_to_send=0.48            
 ```
 
+Overloading the server may seem like a good thing from a stress testing
+perspective, but it is likely to cause TCP to coalesce packets in the receive
+buffer, defeating the purpose of packet boundary fuzzing.
+
 ## When will it stop?
 
 stutterfuzz never exits normally; the search space is too large to be
