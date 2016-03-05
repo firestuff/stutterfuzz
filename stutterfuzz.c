@@ -21,6 +21,8 @@
 #include "list.h"
 #include "rand.h"
 
+#pragma GCC diagnostic ignored "-Wvla"
+
 static struct {
 	char *blob_dir;
 	char *node;
@@ -277,17 +279,24 @@ static void conn_check(struct conn *conn) {
 	int error;
   socklen_t len = sizeof(error);
 	assert(getsockopt(conn->fd, SOL_SOCKET, SO_ERROR, &error, &len) == 0);
-	if (!error) {
-		list_del(&conn->conn_list);
-		list_add(&conn->conn_list, &conn_open_head);
-		assert(!epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn->fd, NULL));
+	if (error) {
+		fprintf(stderr, "Connection failed: %s\n", strerror(error));
+		shutdown_flag = true;
 		return;
 	}
-	if (error == EINPROGRESS) {
-		return;
+	list_del(&conn->conn_list);
+	list_add(&conn->conn_list, &conn_open_head);
+	assert(!epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn->fd, NULL));
+}
+
+static void conn_check_all() {
+	struct epoll_event evs[config.num_conns];
+	int nfds = epoll_wait(epoll_fd, evs, (int) config.num_conns, 0);
+	assert(nfds >= 0);
+	for (int i = 0; i < nfds; i++) {
+		struct conn *conn = evs[i].data.ptr;
+		conn_check(conn);
 	}
-	fprintf(stderr, "Connection failed: %s\n", strerror(error));
-	shutdown_flag = true;
 }
 
 static void conn_cycle() {
@@ -295,9 +304,7 @@ static void conn_cycle() {
 	list_for_each_entry_safe(iter, next, &conn_open_head, conn_list) {
 		conn_send_message(iter);
 	}
-	list_for_each_entry_safe(iter, next, &conn_pending_head, conn_list) {
-		conn_check(iter);
-	}
+	conn_check_all();
 }
 
 int main(int argc, char *argv[]) {
