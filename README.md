@@ -41,8 +41,32 @@ make
 ```
 
 stutterfuzz will print statistics about source files (check these for sanity),
-then continously print a count of rounds. Each round consists of sending all
-input files once. Each round uses different packet boundaries.
+then continously print runtime statistics.
+
+
+## Stats
+
+* rounds: number of passes through all input files
+* mean_cycles_to_connect: number of cycle-ms length cycles we make to connect,
+  average. > 1.00 here may indicate network latency, or that the server is
+	overloaded and you should increase --cycle-ms or lower --num-conns
+* ready_to_send: portion of attempts that a connection has received acks for
+  all outgoing data and is ready to send more. < 1.00 here indicates network
+	latency in excess of --cycle-ms, or delayed ack sending from the receiver.
+
+Good statistics look like this:
+
+```
+Stats: rounds=7400, mean_cycles_to_connect=1.00, ready_to_send=1.00
+```
+
+Bad statistics look like this:
+
+```
+Stats: rounds=2400, mean_cycles_to_connect=68.08, ready_to_send=0.48            
+```
+
+## When will it stop?
 
 stutterfuzz never exits normally; the search space is too large to be
 deterministic. Hit ctrl-c to exit manually. It will also exit with an error
