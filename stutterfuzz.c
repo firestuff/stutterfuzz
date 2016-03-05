@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <netdb.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -51,7 +52,13 @@ struct conn {
 static struct list_head file_head = LIST_HEAD_INIT(file_head);
 static struct list_head conn_head = LIST_HEAD_INIT(conn_head);
 
+static struct addrinfo *addrs = NULL;
 static uint64_t rounds = 0, open_conns = 0;
+static bool shutdown_flag = false;
+
+static void do_shutdown(int __attribute__((unused)) signal) {
+	shutdown_flag = true;
+}
 
 static bool parse_opts(int argc, char *argv[]) {
 	static struct option long_options[] = {
@@ -162,6 +169,20 @@ static void file_open() {
 	assert(!closedir(dir));
 }
 
+static void file_del(struct file *file) {
+	free(file->path);
+	assert(!munmap(file->buf, file->len));
+	list_del(&file->file_list);
+	free(file);
+}
+
+static void file_cleanup() {
+	struct file *iter, *next;
+	list_for_each_entry_safe(iter, next, &file_head, file_list) {
+		file_del(iter);
+	}
+}
+
 static struct file *file_next() {
 	static struct list_head *first = NULL, *iter;
 
@@ -191,8 +212,6 @@ static size_t conn_get_split(struct conn *conn) {
 }
 
 static void conn_new() {
-	static struct addrinfo *addrs = NULL;
-
 	if (!addrs) {
 		struct addrinfo hints = {
 			.ai_flags = AI_V4MAPPED | AI_ADDRCONFIG,
@@ -221,6 +240,13 @@ static void conn_del(struct conn *conn) {
 	list_del(&conn->conn_list);
 	free(conn);
 	open_conns--;
+}
+
+static void conn_cleanup() {
+	struct conn *iter, *next;
+	list_for_each_entry_safe(iter, next, &conn_head, conn_list) {
+		conn_del(iter);
+	}
 }
 
 static void conn_fill() {
@@ -278,6 +304,11 @@ int main(int argc, char *argv[]) {
 		exit(EXIT_FAILURE);
 	}
 
+	signal(SIGINT, do_shutdown);
+	signal(SIGTERM, do_shutdown);
+	assert(!close(STDIN_FILENO));
+	assert(!close(STDOUT_FILENO));
+
 	file_open();
 
 #define NS_PER_S 1000000000
@@ -288,11 +319,16 @@ int main(int argc, char *argv[]) {
 		.tv_nsec = (config.cycle_ms * NS_PER_MS) % NS_PER_S,
 	};
 
-	while (true) {
+	while (!shutdown_flag) {
 		conn_cycle();
 		conn_fill();
-		assert(!nanosleep(&ts, NULL));
+		nanosleep(&ts, NULL);
 	}
 
-	// rand_cleanup();
+	conn_cleanup();
+	file_cleanup();
+	rand_cleanup();
+	freeaddrinfo(addrs);
+
+	assert(!close(STDERR_FILENO));
 }
