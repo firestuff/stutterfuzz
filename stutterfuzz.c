@@ -311,11 +311,12 @@ int main(int argc, char *argv[]) {
 	file_open();
 
 #define NS_PER_S 1000000000
+#define MS_PER_S 1000
 #define NS_PER_MS 1000000
 	uint64_t cycle_ns = config.cycle_ms * NS_PER_MS;
 	struct timespec ts = {
 		.tv_sec = cycle_ns / NS_PER_S,
-		.tv_nsec = (config.cycle_ms * NS_PER_MS) % NS_PER_S,
+		.tv_nsec = (config.cycle_ms % MS_PER_S) * NS_PER_MS,
 	};
 
 	while (!shutdown_flag) {
