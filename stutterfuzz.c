@@ -229,6 +229,13 @@ static void conn_new() {
 	conn->file = file_next();
 	conn->offset = 0;
 	list_add(&conn->conn_list, &conn_pending_head);
+	struct epoll_event ev = {
+		.events = EPOLLOUT,
+		.data = {
+			.ptr = conn,
+		},
+	};
+	assert(!epoll_ctl(epoll_fd, EPOLL_CTL_ADD, conn->fd, &ev));
 	open_conns++;
 }
 
@@ -273,6 +280,7 @@ static void conn_check(struct conn *conn) {
 	if (!error) {
 		list_del(&conn->conn_list);
 		list_add(&conn->conn_list, &conn_open_head);
+		assert(!epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn->fd, NULL));
 		return;
 	}
 	if (error == EINPROGRESS) {
