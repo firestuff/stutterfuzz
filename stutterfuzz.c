@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <netdb.h>
@@ -172,7 +173,7 @@ static struct file *file_next() {
 		iter = iter->next->next;
 		rounds++;
 		if (!(++rounds % 100)) {
-			fprintf(stderr, "\rRounds: %ju", (uintmax_t) rounds);
+			fprintf(stderr, "\rRounds: %ju\r", (uintmax_t) rounds);
 		}
 	} else {
 		iter = iter->next;
@@ -239,10 +240,33 @@ static void conn_send_message(struct conn *conn) {
 	conn->offset += to_send;
 }
 
-static void conn_send_messages() {
+static void conn_check(struct conn *conn) {
+	int error;
+  socklen_t len = sizeof(error);
+	assert(getsockopt(conn->fd, SOL_SOCKET, SO_ERROR, &error, &len) == 0);
+	if (!error) {
+		conn->state = CONN_SENDING;
+		return;
+	}
+	if (error == EINPROGRESS) {
+		return;
+	}
+	fprintf(stderr, "\nConnection failed: %s\n", strerror(error));
+	exit(EXIT_FAILURE);
+}
+
+static void conn_cycle() {
 	struct conn *iter, *next;
 	list_for_each_entry_safe(iter, next, &conn_head, conn_list) {
-		conn_send_message(iter);
+		switch (iter->state) {
+			case CONN_CONNECTING:
+				conn_check(iter);
+				break;
+
+			case CONN_SENDING:
+				conn_send_message(iter);
+				break;
+		}
 	}
 }
 
@@ -251,7 +275,7 @@ int main(int argc, char *argv[]) {
 
 	if (!parse_opts(argc, argv)) {
 		fprintf(stderr, "Usage: TODO\n");
-		return 1;
+		exit(EXIT_FAILURE);
 	}
 
 	file_open();
@@ -265,8 +289,8 @@ int main(int argc, char *argv[]) {
 	};
 
 	while (true) {
+		conn_cycle();
 		conn_fill();
-		conn_send_messages();
 		assert(!nanosleep(&ts, NULL));
 	}
 
