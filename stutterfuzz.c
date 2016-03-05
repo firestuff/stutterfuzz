@@ -340,6 +340,8 @@ int main(int argc, char *argv[]) {
 		nanosleep(&ts, NULL);
 	}
 
+	fprintf(stderr, "\n");
+
 	conn_cleanup();
 	file_cleanup();
 	rand_cleanup();
