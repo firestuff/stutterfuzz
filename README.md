@@ -47,7 +47,7 @@ then continously print runtime statistics.
 ## Stats
 
 * `rounds`: number of passes through all input files
-* `mean_cycles_to_connect`: number of cycle-ms length cycles we make to connect,
+* `mean_cycles_to_connect`: number of cycle-ms length cycles we take to connect,
   average. > 1.00 here may indicate network latency, or that the server is
 	overloaded and you should increase --cycle-ms or lower --num-conns
 * `ready_to_send`: portion of attempts that a connection has received acks for
