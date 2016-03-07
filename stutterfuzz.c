@@ -334,7 +334,7 @@ static void conn_check(struct conn *conn) {
   socklen_t len = sizeof(error);
 	assert(getsockopt(conn->fd, SOL_SOCKET, SO_ERROR, &error, &len) == 0);
 	if (error) {
-		fprintf(stderr, "Connection failed: %s\n", strerror(error));
+		fprintf(stderr, "\nConnection failed: %s\n", strerror(error));
 		shutdown_flag = true;
 		return;
 	}
