@@ -1,6 +1,5 @@
 #include <assert.h>
 #include <dirent.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <netdb.h>
@@ -8,7 +7,6 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
@@ -334,7 +332,7 @@ static void conn_check(struct conn *conn) {
   socklen_t len = sizeof(error);
 	assert(getsockopt(conn->fd, SOL_SOCKET, SO_ERROR, &error, &len) == 0);
 	if (error) {
-		fprintf(stderr, "\nConnection failed: %s\n", strerror(error));
+		fprintf(stderr, "\nConnection failed: %s", strerror(error));
 		shutdown_flag = true;
 		return;
 	}
@@ -391,6 +389,8 @@ int main(int argc, char *argv[]) {
 	assert(!close(STDOUT_FILENO));
 
 	file_open();
+
+	stats_print();
 
 	epoll_fd = epoll_create1(0);
 	assert(epoll_fd >= 0);
