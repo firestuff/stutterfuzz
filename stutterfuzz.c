@@ -218,9 +218,7 @@ static struct file *file_next() {
 
 	if (iter->next == &file_head) {
 		iter = iter->next->next;
-		if (!(++rounds % 100)) {
-			stats_print();
-		}
+		++rounds;
 	} else {
 		iter = iter->next;
 	}
@@ -232,7 +230,7 @@ static size_t conn_get_split(struct conn *conn) {
 	size_t remaining_len = total_len - conn->offset;
 	size_t rnd;
 	rand_fill(&rnd, sizeof(rnd));
-	rnd %= total_len;
+	rnd = (rnd % total_len) + 1;
 	return rnd > remaining_len ? remaining_len : rnd;
 }
 
@@ -405,7 +403,9 @@ int main(int argc, char *argv[]) {
 	};
 
 	while (!shutdown_flag) {
-		cycle++;
+		if (!(++cycle % 100)) {
+			stats_print();
+		}
 		conn_cycle();
 		conn_fill();
 		nanosleep(&ts, NULL);
