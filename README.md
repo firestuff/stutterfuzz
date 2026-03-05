@@ -1,3 +1,9 @@
+# MOVED
+
+This repository has moved to [https://g.fc.run/cpp/stutterfuzz](https://g.fc.run/cpp/stutterfuzz)
+
+---
+
 # stutterfuzz
 
 stutterfuzz is a fuzzer & stress tester for TCP servers. Using a directory
